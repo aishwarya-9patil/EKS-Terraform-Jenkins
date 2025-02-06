@@ -1,5 +1,8 @@
 pipeline {
     agent any
+    parameters {
+        booleanParam(defaultValue: true, description: 'Automatically approve Terraform Apply?', name: 'Approve')
+    }
     environment {
         AWS_ACCESS_KEY_ID = credentials('AWS_ACCESS_KEY_ID')
         AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
@@ -18,7 +21,9 @@ pipeline {
             steps {
                 script {
                     dir('terraform') {
-                        sh 'terraform init'
+                        // Debugging output
+                        echo 'Initializing Terraform...'
+                        sh 'terraform init || { echo "Terraform init failed"; exit 1; }'
                     }
                 }
             }
@@ -28,7 +33,9 @@ pipeline {
             steps {
                 script {
                     dir('terraform') {
-                        sh 'terraform validate'
+                        // Debugging output
+                        echo 'Validating Terraform configuration...'
+                        sh 'terraform validate || { echo "Terraform validation failed"; exit 1; }'
                     }
                 }
             }
@@ -38,21 +45,35 @@ pipeline {
             steps {
                 script {
                     dir('terraform') {
-                        sh 'terraform plan'
+                        // Debugging output
+                        echo 'Running terraform plan...'
+                        sh 'terraform plan -out=tfplan || { echo "Terraform plan failed"; exit 1; }'
                     }
-                    input(message: "Approve?", ok: "proceed")
                 }
             }
         }
 
         stage('Create/Destroy an EKS cluster') {
+            when {
+                expression { return params.Approve == true }
+            }
             steps {
                 script {
                     dir('terraform') {
-                        sh 'terraform $action --auto-approve'
+                        // Debugging output
+                        echo 'Running terraform apply...'
+                        sh 'terraform apply "tfplan" --auto-approve || { echo "Terraform apply failed"; exit 1; }'
                     }
                 }
             }
+        }
+    }
+    post {
+        failure {
+            echo "The pipeline failed. Please check the error logs above for more details."
+        }
+        success {
+            echo "The pipeline completed successfully!"
         }
     }
 }
